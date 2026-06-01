@@ -362,8 +362,9 @@ async def handle_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     try:
         ai_answer = ask_ai(user_question)
-    except Exception:
+    except Exception as e:
         context.user_data["awaiting_ai_question"] = False
+        print("GEMINI ERROR:", repr(e))
         await update.message.reply_text(
             "Сейчас не удалось обработать вопрос через AI.\n"
             "Пожалуйста, свяжитесь с администратором: @your_admin_username",
