@@ -1,5 +1,7 @@
 import os
+import json
 import time
+from datetime import datetime
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
     Application,
@@ -15,6 +17,11 @@ TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 PUBLIC_URL = os.environ["PUBLIC_URL"].rstrip("/")
 PORT = int(os.environ.get("PORT", "10000"))
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
+
+# Идентификатор клиента / проекта для учёта лимита
+CLIENT_ID = "beauty_ai_demo_bot"
+DEFAULT_MONTHLY_LIMIT = 500
+USAGE_FILE = "usage_data.json"
 
 gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
@@ -37,6 +44,93 @@ SYSTEM_PROMPT = """
 - если данных недостаточно, предложи связаться с администратором.
 """
 
+
+# =========================
+# ХРАНЕНИЕ ЛИМИТОВ
+# =========================
+
+def get_current_period() -> str:
+    return datetime.utcnow().strftime("%Y-%m")
+
+
+def load_usage_data() -> dict:
+    if not os.path.exists(USAGE_FILE):
+        return {}
+    with open(USAGE_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def save_usage_data(data: dict) -> None:
+    with open(USAGE_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def ensure_client_plan(client_id: str, default_limit: int = DEFAULT_MONTHLY_LIMIT) -> dict:
+    data = load_usage_data()
+    current_period = get_current_period()
+
+    if client_id not in data:
+        data[client_id] = {
+            "plan_name": f"AI_{default_limit}",
+            "monthly_ai_limit": default_limit,
+            "ai_requests_used": 0,
+            "period": current_period,
+        }
+        save_usage_data(data)
+        return data[client_id]
+
+    client = data[client_id]
+
+    if client.get("period") != current_period:
+        client["ai_requests_used"] = 0
+        client["period"] = current_period
+        save_usage_data(data)
+
+    return client
+
+
+def ai_limit_reached(client_id: str, default_limit: int = DEFAULT_MONTHLY_LIMIT) -> bool:
+    client = ensure_client_plan(client_id, default_limit)
+    return client["ai_requests_used"] >= client["monthly_ai_limit"]
+
+
+def increase_ai_usage(client_id: str, default_limit: int = DEFAULT_MONTHLY_LIMIT) -> None:
+    data = load_usage_data()
+    current_period = get_current_period()
+
+    if client_id not in data:
+        data[client_id] = {
+            "plan_name": f"AI_{default_limit}",
+            "monthly_ai_limit": default_limit,
+            "ai_requests_used": 0,
+            "period": current_period,
+        }
+
+    client = data[client_id]
+
+    if client.get("period") != current_period:
+        client["ai_requests_used"] = 0
+        client["period"] = current_period
+
+    client["ai_requests_used"] += 1
+    save_usage_data(data)
+
+
+def get_client_usage_text(client_id: str, default_limit: int = DEFAULT_MONTHLY_LIMIT) -> str:
+    client = ensure_client_plan(client_id, default_limit)
+    remaining = max(client["monthly_ai_limit"] - client["ai_requests_used"], 0)
+    return (
+        f"Тариф: {client['plan_name']}\n"
+        f"Лимит: {client['monthly_ai_limit']}\n"
+        f"Использовано: {client['ai_requests_used']}\n"
+        f"Осталось: {remaining}\n"
+        f"Период: {client['period']}"
+    )
+
+
+# =========================
+# GEMINI
+# =========================
 
 def ask_ai(user_question: str) -> str:
     prompt = f"""
@@ -77,17 +171,19 @@ def ask_ai_with_retry(user_question: str, max_attempts: int = 3) -> str:
             error_text = repr(e)
             print(f"GEMINI ERROR attempt {attempt}: {error_text}")
 
-            # Если это временная перегрузка модели, пробуем ещё раз
             if "503" in error_text or "UNAVAILABLE" in error_text or "high demand" in error_text:
                 if attempt < max_attempts:
-                    time.sleep(2 * attempt)  # 2 сек, потом 4 сек
+                    time.sleep(2 * attempt)
                     continue
 
-            # Если это не 503, не делаем лишние повторы
             break
 
     raise last_error
 
+
+# =========================
+# ТЕКСТЫ И КНОПКИ
+# =========================
 
 SCREEN_TEXTS = {
     "start_screen": (
@@ -149,31 +245,25 @@ SCREEN_BUTTONS = {
         [("Записаться", "booking_screen"), ("Акции", "promos_screen")],
         [("Контакты", "contacts_screen"), ("Администратор", "admin_screen")],
     ],
-
     "ask_ai_screen": [
         [("Администратор", "admin_screen"), ("В меню", "start_screen")],
     ],
-
     "prices_screen": [
         [("Задать вопрос", "ask_ai_screen"), ("Записаться", "booking_screen")],
         [("Администратор", "admin_screen"), ("В меню", "start_screen")],
     ],
-
     "booking_screen": [
         [("Администратор", "admin_screen"), ("Задать вопрос", "ask_ai_screen")],
         [("В меню", "start_screen")],
     ],
-
     "promos_screen": [
         [("Записаться", "booking_screen"), ("Администратор", "admin_screen")],
         [("В меню", "start_screen")],
     ],
-
     "contacts_screen": [
         [("Администратор", "admin_screen"), ("Задать вопрос", "ask_ai_screen")],
         [("В меню", "start_screen")],
     ],
-
     "admin_screen": [
         [("В меню", "start_screen")],
     ],
@@ -206,6 +296,10 @@ def needs_admin_fallback(text: str) -> bool:
     return any(marker in lowered for marker in fallback_markers)
 
 
+# =========================
+# ОБРАБОТЧИКИ
+# =========================
+
 async def show_screen(
     update: Update,
     screen_id: str,
@@ -235,9 +329,15 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "Команды:\n"
         "/start — открыть главное меню\n"
         "/menu — открыть главное меню\n"
-        "/help — помощь",
+        "/help — помощь\n"
+        "/usage — показать лимит AI-ответов",
         reply_markup=build_keyboard("start_screen"),
     )
+
+
+async def usage_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    usage_text = get_client_usage_text(CLIENT_ID, DEFAULT_MONTHLY_LIMIT)
+    await update.message.reply_text(usage_text)
 
 
 async def handle_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -247,6 +347,16 @@ async def handle_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text(
             "Пожалуйста, напишите вопрос текстом.",
             reply_markup=build_keyboard("ask_ai_screen"),
+        )
+        return
+
+    if ai_limit_reached(CLIENT_ID, DEFAULT_MONTHLY_LIMIT):
+        context.user_data["awaiting_ai_question"] = False
+        await update.message.reply_text(
+            "Лимит AI-ответов на этот период временно исчерпан.\n"
+            "Вы всё ещё можете воспользоваться кнопками бота или связаться с администратором.\n\n"
+            "Для продолжения AI-ответов можно подключить дополнительный пакет.",
+            reply_markup=build_keyboard("admin_screen"),
         )
         return
 
@@ -264,6 +374,7 @@ async def handle_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         return
 
+    increase_ai_usage(CLIENT_ID, DEFAULT_MONTHLY_LIMIT)
     context.user_data["awaiting_ai_question"] = False
 
     if needs_admin_fallback(ai_answer):
@@ -308,9 +419,10 @@ def main() -> None:
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("menu", menu_command))
     application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("usage", usage_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("Minimal AI-first Beauty Bot with retry is running on Render...")
+    print("Minimal AI-first Beauty Bot with retry and monthly limits is running on Render...")
 
     application.run_webhook(
         listen="0.0.0.0",
