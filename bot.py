@@ -68,226 +68,90 @@ def ask_ai(user_question: str) -> str:
 SCREEN_TEXTS = {
     "start_screen": (
         "Здравствуйте 👋\n"
-        "Добро пожаловать!\n\n"
-        "Я помогу вам быстро узнать основную информацию:\n"
-        "— услуги\n"
-        "— цены\n"
-        "— как записаться\n"
-        "— частые вопросы\n"
-        "— контакты\n"
-        "— AI-ответы на свободные вопросы\n\n"
-        "Выберите нужный раздел ниже."
+        "Добро пожаловать в Beauty AI Bot.\n\n"
+        "Я могу:\n"
+        "— ответить на ваш вопрос по услугам салона\n"
+        "— показать цены\n"
+        "— подсказать, как записаться\n"
+        "— показать акции и контакты\n\n"
+        "Выберите действие ниже или задайте вопрос через AI."
     ),
-    "services_screen": "Выберите интересующий вас раздел услуг.",
-    "prices_screen": "Здесь вы можете посмотреть цены и акции.",
-    "booking_screen": "Здесь собрана информация о записи.",
-    "faq_screen": "Частые вопросы клиентов.",
-    "contacts_screen": "Контакты и информация о нас.",
+    "ask_ai_screen": (
+        "Напишите ваш вопрос одним сообщением.\n\n"
+        "Например:\n"
+        "— Сколько стоит маникюр?\n"
+        "— Какой у вас график?\n"
+        "— Как подготовиться к процедуре?\n"
+        "— Можно ли перенести запись?"
+    ),
+    "prices_screen": (
+        "Цены\n\n"
+        "Маникюр — от 1500 ₽\n"
+        "Маникюр с покрытием — от 2200 ₽\n"
+        "Педикюр — от 2500 ₽\n"
+        "Брови — от 900 ₽\n\n"
+        "Если нужен точный подбор услуги, можно задать вопрос через AI или написать администратору."
+    ),
+    "booking_screen": (
+        "Как записаться\n\n"
+        "1. Вы можете задать вопрос через AI\n"
+        "2. Или сразу написать администратору\n"
+        "3. Если нужен перенос / отмена / подбор времени — лучше писать администратору напрямую"
+    ),
+    "promos_screen": (
+        "Акции\n\n"
+        "— скидка 10% на первое посещение\n"
+        "— комплексная скидка при записи на 2 услуги\n\n"
+        "Актуальные условия лучше уточнить у администратора."
+    ),
+    "contacts_screen": (
+        "Контакты\n\n"
+        "Адрес: г. Москва, ул. Примерная, д. 10\n"
+        "График: ежедневно с 10:00 до 21:00\n"
+        "Telegram: @your_admin_username\n"
+        "Телефон: +7 900 000-00-00"
+    ),
     "admin_screen": (
         "Связаться с администратором:\n\n"
         "Telegram: @your_admin_username\n"
         "Телефон: +7 900 000-00-00\n\n"
-        "Можете написать администратору прямо сейчас."
-    ),
-    "ask_ai_screen": (
-        "Напишите ваш вопрос одним сообщением.\n\n"
-        "Я постараюсь помочь по информации о салоне.\n"
-        "Если вопрос требует уточнения, я предложу связаться с администратором."
-    ),
-
-    # УСЛУГИ
-    "service_manicure": (
-        "Маникюр\n\n"
-        "Мы предлагаем:\n"
-        "— классический маникюр\n"
-        "— аппаратный маникюр\n"
-        "— маникюр с покрытием\n\n"
-        "Если хотите, дальше можете посмотреть цены или перейти к записи."
-    ),
-    "service_pedicure": (
-        "Педикюр\n\n"
-        "Мы предлагаем:\n"
-        "— классический педикюр\n"
-        "— аппаратный педикюр\n"
-        "— педикюр с покрытием\n\n"
-        "Если хотите, дальше можете посмотреть цены или перейти к записи."
-    ),
-    "service_brows": (
-        "Брови\n\n"
-        "Мы предлагаем:\n"
-        "— коррекцию бровей\n"
-        "— окрашивание\n"
-        "— комплекс коррекция + окрашивание\n\n"
-        "Если хотите, дальше можете посмотреть цены или перейти к записи."
-    ),
-
-    # ЦЕНЫ
-    "price_list": (
-        "Прайс\n\n"
-        "Маникюр — от 1500 ₽\n"
-        "Педикюр — от 2000 ₽\n"
-        "Брови — от 900 ₽\n\n"
-        "Точная стоимость зависит от выбранной услуги и объёма работы."
-    ),
-    "price_promos": (
-        "Акции\n\n"
-        "Сейчас действуют:\n"
-        "— скидка 10% на первое посещение\n"
-        "— комплексная скидка при записи на 2 услуги\n\n"
-        "Актуальные предложения лучше уточнять у администратора."
-    ),
-
-    # ЗАПИСЬ
-    "booking_how": (
-        "Как проходит запись\n\n"
-        "1. Вы выбираете интересующую услугу\n"
-        "2. Пишете администратору\n"
-        "3. Уточняете удобную дату и время\n"
-        "4. Получаете подтверждение записи"
-    ),
-    "booking_what_write": (
-        "Что написать администратору\n\n"
-        "Пример сообщения:\n\n"
-        "Здравствуйте. Хочу записаться на маникюр.\n"
-        "Удобно на этой неделе во второй половине дня.\n"
-        "Подскажите, пожалуйста, какие есть свободные окна?"
-    ),
-
-    # FAQ
-    "faq_duration": (
-        "Сколько длится процедура\n\n"
-        "Обычно:\n"
-        "— маникюр: 1–2 часа\n"
-        "— педикюр: 1.5–2.5 часа\n"
-        "— брови: 30–60 минут\n\n"
-        "Точное время зависит от конкретной услуги."
-    ),
-    "faq_prepare": (
-        "Как подготовиться\n\n"
-        "Обычно специальная подготовка не нужна.\n"
-        "Если есть особенности или ограничения, лучше заранее написать администратору."
-    ),
-    "faq_reschedule": (
-        "Можно ли перенести запись\n\n"
-        "Да, перенос возможен.\n"
-        "Желательно предупредить администратора заранее, чтобы подобрать новое удобное время."
-    ),
-
-    # КОНТАКТЫ
-    "contacts_address": (
-        "Адрес\n\n"
-        "г. Москва\n"
-        "ул. Примерная, д. 10\n\n"
-        "Точный адрес и схему прохода можно уточнить у администратора."
-    ),
-    "contacts_schedule": (
-        "График работы\n\n"
-        "Ежедневно\n"
-        "с 10:00 до 21:00"
-    ),
-    "contacts_all": (
-        "Контакты\n\n"
-        "Telegram: @your_admin_username\n"
-        "Телефон: +7 900 000-00-00\n"
-        "WhatsApp: +7 900 000-00-00"
+        "Если вопрос индивидуальный или нужен подбор времени, лучше написать администратору."
     ),
 }
 
 SCREEN_BUTTONS = {
     "start_screen": [
-        [("Услуги", "services_screen"), ("Цены", "prices_screen")],
-        [("Как записаться", "booking_screen"), ("FAQ", "faq_screen")],
-        [("Контакты", "contacts_screen"), ("Задать вопрос", "ask_ai_screen")],
-        [("Администратор", "admin_screen")],
-    ],
-
-    "services_screen": [
-        [("Маникюр", "service_manicure"), ("Педикюр", "service_pedicure")],
-        [("Брови", "service_brows")],
-        [("В меню", "start_screen")],
-    ],
-
-    "prices_screen": [
-        [("Прайс", "price_list"), ("Акции", "price_promos")],
-        [("В меню", "start_screen")],
-    ],
-
-    "booking_screen": [
-        [("Как проходит запись", "booking_how")],
-        [("Что написать администратору", "booking_what_write")],
-        [("В меню", "start_screen")],
-    ],
-
-    "faq_screen": [
-        [("Сколько длится процедура", "faq_duration")],
-        [("Как подготовиться", "faq_prepare")],
-        [("Можно ли перенести запись", "faq_reschedule")],
-        [("В меню", "start_screen")],
-    ],
-
-    "contacts_screen": [
-        [("Адрес", "contacts_address"), ("График", "contacts_schedule")],
-        [("Все контакты", "contacts_all")],
-        [("В меню", "start_screen")],
-    ],
-
-    "admin_screen": [
-        [("В меню", "start_screen")],
+        [("Задать вопрос", "ask_ai_screen"), ("Цены", "prices_screen")],
+        [("Записаться", "booking_screen"), ("Акции", "promos_screen")],
+        [("Контакты", "contacts_screen"), ("Администратор", "admin_screen")],
     ],
 
     "ask_ai_screen": [
         [("Администратор", "admin_screen"), ("В меню", "start_screen")],
     ],
 
-    "service_manicure": [
-        [("Цены", "prices_screen"), ("Как записаться", "booking_screen")],
-        [("Назад к услугам", "services_screen"), ("В меню", "start_screen")],
-    ],
-    "service_pedicure": [
-        [("Цены", "prices_screen"), ("Как записаться", "booking_screen")],
-        [("Назад к услугам", "services_screen"), ("В меню", "start_screen")],
-    ],
-    "service_brows": [
-        [("Цены", "prices_screen"), ("Как записаться", "booking_screen")],
-        [("Назад к услугам", "services_screen"), ("В меню", "start_screen")],
+    "prices_screen": [
+        [("Задать вопрос", "ask_ai_screen"), ("Записаться", "booking_screen")],
+        [("Администратор", "admin_screen"), ("В меню", "start_screen")],
     ],
 
-    "price_list": [
-        [("Как записаться", "booking_screen")],
-        [("Назад к ценам", "prices_screen"), ("В меню", "start_screen")],
-    ],
-    "price_promos": [
-        [("Как записаться", "booking_screen")],
-        [("Назад к ценам", "prices_screen"), ("В меню", "start_screen")],
+    "booking_screen": [
+        [("Администратор", "admin_screen"), ("Задать вопрос", "ask_ai_screen")],
+        [("В меню", "start_screen")],
     ],
 
-    "booking_how": [
-        [("Написать администратору", "admin_screen")],
-        [("Назад к записи", "booking_screen"), ("В меню", "start_screen")],
-    ],
-    "booking_what_write": [
-        [("Написать администратору", "admin_screen")],
-        [("Назад к записи", "booking_screen"), ("В меню", "start_screen")],
+    "promos_screen": [
+        [("Записаться", "booking_screen"), ("Администратор", "admin_screen")],
+        [("В меню", "start_screen")],
     ],
 
-    "faq_duration": [
-        [("Назад к FAQ", "faq_screen"), ("В меню", "start_screen")],
-    ],
-    "faq_prepare": [
-        [("Назад к FAQ", "faq_screen"), ("В меню", "start_screen")],
-    ],
-    "faq_reschedule": [
-        [("Назад к FAQ", "faq_screen"), ("В меню", "start_screen")],
+    "contacts_screen": [
+        [("Администратор", "admin_screen"), ("Задать вопрос", "ask_ai_screen")],
+        [("В меню", "start_screen")],
     ],
 
-    "contacts_address": [
-        [("Назад к контактам", "contacts_screen"), ("В меню", "start_screen")],
-    ],
-    "contacts_schedule": [
-        [("Назад к контактам", "contacts_screen"), ("В меню", "start_screen")],
-    ],
-    "contacts_all": [
-        [("Назад к контактам", "contacts_screen"), ("В меню", "start_screen")],
+    "admin_screen": [
+        [("В меню", "start_screen")],
     ],
 }
 
@@ -318,7 +182,11 @@ def needs_admin_fallback(text: str) -> bool:
     return any(marker in lowered for marker in fallback_markers)
 
 
-async def show_screen(update: Update, screen_id: str, context: ContextTypes.DEFAULT_TYPE | None = None) -> None:
+async def show_screen(
+    update: Update,
+    screen_id: str,
+    context: ContextTypes.DEFAULT_TYPE | None = None,
+) -> None:
     text = SCREEN_TEXTS.get(screen_id, "Экран пока не найден.")
     keyboard = build_keyboard(screen_id)
 
@@ -375,7 +243,10 @@ async def handle_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE)
     context.user_data["awaiting_ai_question"] = False
 
     if needs_admin_fallback(ai_answer):
-        await update.message.reply_text(ai_answer, reply_markup=build_keyboard("admin_screen"))
+        await update.message.reply_text(
+            ai_answer,
+            reply_markup=build_keyboard("admin_screen"),
+        )
         return
 
     await update.message.reply_text(
@@ -415,7 +286,7 @@ def main() -> None:
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("Beauty AI Gemini Bot is running on Render...")
+    print("Minimal AI-first Beauty Bot is running on Render...")
 
     application.run_webhook(
         listen="0.0.0.0",
