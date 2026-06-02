@@ -1,4 +1,5 @@
 import os
+import time
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
     Application,
@@ -63,6 +64,29 @@ def ask_ai(user_question: str) -> str:
         )
 
     return answer
+
+
+def ask_ai_with_retry(user_question: str, max_attempts: int = 3) -> str:
+    last_error = None
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return ask_ai(user_question)
+        except Exception as e:
+            last_error = e
+            error_text = repr(e)
+            print(f"GEMINI ERROR attempt {attempt}: {error_text}")
+
+            # Если это временная перегрузка модели, пробуем ещё раз
+            if "503" in error_text or "UNAVAILABLE" in error_text or "high demand" in error_text:
+                if attempt < max_attempts:
+                    time.sleep(2 * attempt)  # 2 сек, потом 4 сек
+                    continue
+
+            # Если это не 503, не делаем лишние повторы
+            break
+
+    raise last_error
 
 
 SCREEN_TEXTS = {
@@ -229,13 +253,13 @@ async def handle_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await update.message.reply_text("Секунду, думаю над ответом...")
 
     try:
-        ai_answer = ask_ai(user_question)
+        ai_answer = ask_ai_with_retry(user_question)
     except Exception as e:
         context.user_data["awaiting_ai_question"] = False
-        print("GEMINI ERROR:", repr(e))
+        print("FINAL GEMINI ERROR:", repr(e))
         await update.message.reply_text(
-            "Сейчас не удалось обработать вопрос через AI.\n"
-            "Пожалуйста, свяжитесь с администратором: @your_admin_username",
+            "Сейчас AI-ответы временно перегружены.\n"
+            "Пожалуйста, попробуйте ещё раз чуть позже или свяжитесь с администратором: @your_admin_username",
             reply_markup=build_keyboard("admin_screen"),
         )
         return
@@ -286,7 +310,7 @@ def main() -> None:
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("Minimal AI-first Beauty Bot is running on Render...")
+    print("Minimal AI-first Beauty Bot with retry is running on Render...")
 
     application.run_webhook(
         listen="0.0.0.0",
