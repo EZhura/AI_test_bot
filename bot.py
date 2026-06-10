@@ -509,7 +509,7 @@ async def handle_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         return
 
-    await update.message.reply_text("Секунду, формирую ответ...")
+    await update.message.reply_text("Секунду, проверяю информацию...")
 
     try:
         ai_answer = ask_ai_with_retry(user_question)
