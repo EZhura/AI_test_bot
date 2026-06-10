@@ -13,41 +13,70 @@ from telegram.ext import (
 from google import genai
 from knowledge import SALON_KNOWLEDGE
 
-TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
-PUBLIC_URL = os.environ["PUBLIC_URL"].rstrip("/")
-PORT = int(os.environ.get("PORT", "10000"))
-GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 
-# Идентификатор клиента / проекта для учёта лимита
+# ============================================================
+# НАСТРОЙКИ ДЛЯ RENDER
+# ============================================================
+# Обязательные переменные окружения:
+# TELEGRAM_BOT_TOKEN — токен AI-бота от BotFather
+# PUBLIC_URL — публичный URL Render-сервиса, например https://your-service.onrender.com
+# GEMINI_API_KEY — ключ Gemini API
+#
+# Необязательные переменные окружения:
+# GEMINI_MODEL — модель Gemini, например gemini-3.5-flash
+# OWNER_TELEGRAM_ID — ваш Telegram user_id, чтобы только вы могли смотреть /usage
+#
+# PORT Render обычно задаёт сам.
+# ============================================================
+
+TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+PUBLIC_URL = os.environ.get("PUBLIC_URL", "").rstrip("/")
+PORT = int(os.environ.get("PORT", "10000"))
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
+
+# Если хотите закрыть /usage от всех, кроме себя:
+# 1. Узнайте свой Telegram user_id через @userinfobot
+# 2. Добавьте в Render переменную OWNER_TELEGRAM_ID=ваш_id
+OWNER_TELEGRAM_ID = os.environ.get("OWNER_TELEGRAM_ID")
+
+# Идентификатор демо-проекта для учёта лимита
 CLIENT_ID = "beauty_ai_demo_bot"
-DEFAULT_MONTHLY_LIMIT = 500
+DEFAULT_MONTHLY_LIMIT = int(os.environ.get("DEFAULT_MONTHLY_LIMIT", "500"))
 USAGE_FILE = "usage_data.json"
 
-gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+gemini_client = None
+
 
 SYSTEM_PROMPT = """
-Ты — вежливый AI-помощник салона красоты в Telegram-боте.
+Ты — вежливый AI-помощник демо-салона красоты в Telegram-боте.
 
-Твои правила:
-1. Отвечай только на основе предоставленной информации о салоне.
-2. Не придумывай цены, услуги, адрес, акции, график, мастеров и свободные окна.
-3. Если информации недостаточно, честно скажи об этом и предложи обратиться к администратору.
-4. Пиши коротко, дружелюбно и понятно.
-5. Не отвечай на темы, не связанные с услугами салона, ценами, записью, подготовкой, графиком, адресом и контактами.
-6. Если вопрос требует индивидуальной консультации, диагностики, подтверждения цены или свободного времени, направь клиента к администратору.
-7. Не выдавай предположения за факты.
-8. Если вопрос медицинский, спорный или явно вне базы знаний — не делай выводов и направляй к администратору.
+Это демонстрационный бот, а не бот реального салона.
+Твоя задача — показать, как AI-бот может отвечать клиентам по базе знаний бизнеса.
+
+Правила:
+1. Отвечай только на основе предоставленной базы знаний.
+2. Не придумывай цены, услуги, адрес, акции, график, мастеров, контакты и свободные окна.
+3. Если информации недостаточно, честно скажи, что данных нет в демо-базе.
+4. Не делай вид, что запись реально подключена.
+5. Если клиент спрашивает про свободное время, точную запись, индивидуальный подбор или противопоказания — направь к администратору.
+6. Не отвечай на темы, не связанные с услугами салона, ценами, записью, подготовкой, графиком и контактами.
+7. Не давай медицинских рекомендаций и не заменяй консультацию специалиста.
+8. Не выдавай предположения за факты.
+9. Пиши коротко, дружелюбно и понятно.
+10. Если вопрос касается реального проекта, объясни, что в рабочей версии данные заменяются на информацию конкретного салона.
 
 Формат ответа:
 - короткий ответ по сути;
-- если нужно, 1 короткое уточнение;
-- если данных недостаточно, предложи связаться с администратором.
+- если данных не хватает, скажи об этом прямо;
+- если нужен человек, предложи обратиться к администратору салона;
+- не используй фейковые контакты.
 """
 
 
-# =========================
+# ============================================================
 # ХРАНЕНИЕ ЛИМИТОВ
-# =========================
+# ============================================================
 
 def get_current_period() -> str:
     return datetime.utcnow().strftime("%Y-%m")
@@ -56,8 +85,12 @@ def get_current_period() -> str:
 def load_usage_data() -> dict:
     if not os.path.exists(USAGE_FILE):
         return {}
-    with open(USAGE_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+
+    try:
+        with open(USAGE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {}
 
 
 def save_usage_data(data: dict) -> None:
@@ -119,32 +152,48 @@ def increase_ai_usage(client_id: str, default_limit: int = DEFAULT_MONTHLY_LIMIT
 def get_client_usage_text(client_id: str, default_limit: int = DEFAULT_MONTHLY_LIMIT) -> str:
     client = ensure_client_plan(client_id, default_limit)
     remaining = max(client["monthly_ai_limit"] - client["ai_requests_used"], 0)
+
     return (
         f"Тариф: {client['plan_name']}\n"
-        f"Лимит: {client['monthly_ai_limit']}\n"
+        f"Лимит AI-ответов: {client['monthly_ai_limit']}\n"
         f"Использовано: {client['ai_requests_used']}\n"
         f"Осталось: {remaining}\n"
-        f"Период: {client['period']}"
+        f"Период: {client['period']}\n\n"
+        "Важно: в демо-боте учёт хранится в локальном файле Render. "
+        "Для рабочего клиентского проекта лучше использовать внешнее хранение."
     )
 
 
-# =========================
+# ============================================================
 # GEMINI
-# =========================
+# ============================================================
+
+def get_gemini_client():
+    global gemini_client
+
+    if gemini_client is None:
+        if not GEMINI_API_KEY:
+            raise RuntimeError("Не задана переменная окружения GEMINI_API_KEY")
+        gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+
+    return gemini_client
+
 
 def ask_ai(user_question: str) -> str:
     prompt = f"""
 {SYSTEM_PROMPT}
 
-Информация о салоне:
+База знаний демо-салона:
 {SALON_KNOWLEDGE}
 
-Вопрос клиента:
+Вопрос пользователя:
 {user_question}
 """
 
-    response = gemini_client.models.generate_content(
-        model="gemini-3.5-flash",
+    client = get_gemini_client()
+
+    response = client.models.generate_content(
+        model=GEMINI_MODEL,
         contents=prompt,
     )
 
@@ -153,8 +202,8 @@ def ask_ai(user_question: str) -> str:
 
     if not answer:
         return (
-            "Сейчас мне не удалось корректно ответить на вопрос. "
-            "Пожалуйста, свяжитесь с администратором: @your_admin_username"
+            "Сейчас не удалось получить корректный AI-ответ. "
+            "В рабочем боте в такой ситуации клиенту можно предложить перейти к администратору."
         )
 
     return answer
@@ -171,147 +220,230 @@ def ask_ai_with_retry(user_question: str, max_attempts: int = 3) -> str:
             error_text = repr(e)
             print(f"GEMINI ERROR attempt {attempt}: {error_text}")
 
-            if "503" in error_text or "UNAVAILABLE" in error_text or "high demand" in error_text:
-                if attempt < max_attempts:
-                    time.sleep(2 * attempt)
-                    continue
+            temporary_error = (
+                "503" in error_text
+                or "UNAVAILABLE" in error_text
+                or "high demand" in error_text.lower()
+                or "timeout" in error_text.lower()
+            )
+
+            if temporary_error and attempt < max_attempts:
+                time.sleep(2 * attempt)
+                continue
 
             break
 
     raise last_error
 
 
-# =========================
+# ============================================================
 # ТЕКСТЫ И КНОПКИ
-# =========================
+# ============================================================
 
 SCREEN_TEXTS = {
     "start_screen": (
-        "Здравствуйте 👋\n"
-        "Добро пожаловать в Beauty AI Bot.\n\n"
-        "Я могу:\n"
-        "— ответить на ваш вопрос по услугам салона\n"
-        "— показать цены\n"
-        "— подсказать, как записаться\n"
-        "— показать акции и контакты\n\n"
-        "Выберите действие ниже или задайте вопрос через AI."
+        "Здравствуйте 👋\n\n"
+        "Это демо-пример AI-бота для салона красоты.\n\n"
+        "Он показывает, как бот может отвечать на вопросы клиента по базе знаний салона: "
+        "услуги, цены, подготовка, запись, акции и ограничения.\n\n"
+        "Важно: это не реальный салон. В рабочем проекте база знаний, контакты, адрес, цены "
+        "и правила записи заменяются на данные конкретного бизнеса.\n\n"
+        "Вы можете выбрать раздел ниже или нажать «Задать вопрос» и написать вопрос своими словами."
     ),
+
     "ask_ai_screen": (
-        "Напишите ваш вопрос одним сообщением.\n\n"
-        "Например:\n"
+        "Задайте вопрос AI-боту\n\n"
+        "Напишите вопрос одним сообщением.\n\n"
+        "Примеры:\n"
         "— Сколько стоит маникюр?\n"
-        "— Какой у вас график?\n"
+        "— Какие есть услуги?\n"
         "— Как подготовиться к процедуре?\n"
-        "— Можно ли перенести запись?"
+        "— Можно ли перенести запись?\n"
+        "— Есть ли скидка на первое посещение?\n\n"
+        "AI отвечает только по демо-базе знаний и не придумывает данные, которых в ней нет."
     ),
+
     "prices_screen": (
-        "Цены\n\n"
-        "Маникюр — от 1500 ₽\n"
+        "Цены в демо-примере\n\n"
+        "Маникюр без покрытия — от 1500 ₽\n"
         "Маникюр с покрытием — от 2200 ₽\n"
         "Педикюр — от 2500 ₽\n"
-        "Брови — от 900 ₽\n\n"
-        "Если нужен точный подбор услуги, можно задать вопрос через AI или написать администратору."
+        "Коррекция бровей — от 900 ₽\n"
+        "Окрашивание бровей — от 1200 ₽\n\n"
+        "В рабочем проекте сюда добавляется реальный прайс салона.\n\n"
+        "Если нужна точная стоимость под конкретную ситуацию, бот должен направить клиента к администратору."
     ),
+
     "booking_screen": (
-        "Как записаться\n\n"
-        "1. Вы можете задать вопрос через AI\n"
-        "2. Или сразу написать администратору\n"
-        "3. Если нужен перенос / отмена / подбор времени — лучше писать администратору напрямую"
+        "Запись\n\n"
+        "В этом демо-боте запись не подключена.\n\n"
+        "В рабочем проекте бот может:\n"
+        "— переводить клиента к администратору;\n"
+        "— вести в WhatsApp или Telegram;\n"
+        "— давать ссылку на YCLIENTS, DIKIDI, Altegio, Taplink или другую систему записи;\n"
+        "— помогать клиенту сформулировать запрос перед записью.\n\n"
+        "Бот не должен обещать свободные окна, если система записи не подключена."
     ),
+
     "promos_screen": (
-        "Акции\n\n"
-        "— скидка 10% на первое посещение\n"
-        "— комплексная скидка при записи на 2 услуги\n\n"
-        "Актуальные условия лучше уточнить у администратора."
+        "Акции в демо-примере\n\n"
+        "— скидка 10% на первое посещение;\n"
+        "— комплексная скидка при записи на 2 услуги.\n\n"
+        "В рабочем проекте акции заменяются на реальные предложения салона.\n\n"
+        "AI-бот не должен придумывать скидки или акции, которых нет в базе знаний."
     ),
+
     "contacts_screen": (
         "Контакты\n\n"
-        "Адрес: г. Москва, ул. Примерная, д. 10\n"
-        "График: ежедневно с 10:00 до 21:00\n"
-        "Telegram: @your_admin_username\n"
-        "Телефон: +7 900 000-00-00"
+        "Это демо-экран.\n\n"
+        "В рабочем проекте здесь будут реальные контакты салона:\n"
+        "— адрес;\n"
+        "— график;\n"
+        "— WhatsApp;\n"
+        "— Telegram;\n"
+        "— телефон;\n"
+        "— ссылка на онлайн-запись;\n"
+        "— ссылка на карту или схема прохода.\n\n"
+        "В демо-версии реальные контакты не указаны."
     ),
+
     "admin_screen": (
-        "Связаться с администратором:\n\n"
-        "Telegram: @your_admin_username\n"
-        "Телефон: +7 900 000-00-00\n\n"
-        "Если вопрос индивидуальный или нужен подбор времени, лучше написать администратору."
+        "Администратор\n\n"
+        "Это демо-экран перехода к администратору.\n\n"
+        "В рабочем боте здесь будет реальная ссылка на администратора салона: "
+        "WhatsApp, Telegram, телефон, онлайн-запись или CRM.\n\n"
+        "К администратору лучше переводить вопросы про:\n"
+        "— свободные окна;\n"
+        "— точную стоимость;\n"
+        "— индивидуальный подбор услуги;\n"
+        "— противопоказания;\n"
+        "— перенос или отмену записи;\n"
+        "— ситуации, которых нет в базе знаний."
+    ),
+
+    "limitations_screen": (
+        "Ограничения AI-бота\n\n"
+        "AI-бот не должен:\n"
+        "— придумывать услуги, цены, скидки или контакты;\n"
+        "— обещать свободные окна без подключения записи;\n"
+        "— заменять администратора полностью;\n"
+        "— давать медицинские рекомендации;\n"
+        "— отвечать уверенно, если данных нет в базе.\n\n"
+        "Правильная логика: AI отвечает на типовые вопросы, а сложные и индивидуальные ситуации передаёт человеку."
     ),
 }
+
 
 SCREEN_BUTTONS = {
     "start_screen": [
         [("Задать вопрос", "ask_ai_screen"), ("Цены", "prices_screen")],
-        [("Записаться", "booking_screen"), ("Акции", "promos_screen")],
+        [("Запись", "booking_screen"), ("Акции", "promos_screen")],
         [("Контакты", "contacts_screen"), ("Администратор", "admin_screen")],
+        [("Ограничения AI", "limitations_screen")],
     ],
+
     "ask_ai_screen": [
         [("Администратор", "admin_screen"), ("В меню", "start_screen")],
     ],
+
     "prices_screen": [
-        [("Задать вопрос", "ask_ai_screen"), ("Записаться", "booking_screen")],
+        [("Задать вопрос", "ask_ai_screen"), ("Запись", "booking_screen")],
         [("Администратор", "admin_screen"), ("В меню", "start_screen")],
     ],
+
     "booking_screen": [
         [("Администратор", "admin_screen"), ("Задать вопрос", "ask_ai_screen")],
         [("В меню", "start_screen")],
     ],
+
     "promos_screen": [
-        [("Записаться", "booking_screen"), ("Администратор", "admin_screen")],
-        [("В меню", "start_screen")],
+        [("Запись", "booking_screen"), ("Администратор", "admin_screen")],
+        [("Задать вопрос", "ask_ai_screen"), ("В меню", "start_screen")],
     ],
+
     "contacts_screen": [
         [("Администратор", "admin_screen"), ("Задать вопрос", "ask_ai_screen")],
         [("В меню", "start_screen")],
     ],
+
     "admin_screen": [
+        [("Задать вопрос", "ask_ai_screen")],
+        [("В меню", "start_screen")],
+    ],
+
+    "limitations_screen": [
+        [("Задать вопрос", "ask_ai_screen")],
         [("В меню", "start_screen")],
     ],
 }
 
+
 BUTTON_TO_SCREEN = {}
+
 for screen_id, rows in SCREEN_BUTTONS.items():
     for row in rows:
         for button_text, target_screen in row:
             BUTTON_TO_SCREEN[button_text] = target_screen
 
 
+# ============================================================
+# КЛАВИАТУРА
+# ============================================================
+
 def build_keyboard(screen_id: str) -> ReplyKeyboardMarkup:
-    rows = SCREEN_BUTTONS.get(screen_id, [])
+    rows = SCREEN_BUTTONS.get(screen_id, SCREEN_BUTTONS["start_screen"])
     keyboard = []
+
     for row in rows:
         keyboard.append([KeyboardButton(button_text) for button_text, _ in row])
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+    return ReplyKeyboardMarkup(
+        keyboard,
+        resize_keyboard=True,
+        input_field_placeholder="Выберите раздел"
+    )
 
 
 def needs_admin_fallback(text: str) -> bool:
     fallback_markers = [
         "обратиться к администратору",
         "связаться с администратором",
+        "написать администратору",
         "уточнить у администратора",
         "лучше уточнить",
-        "недостаточно информации",
+        "данных нет",
+        "данных недостаточно",
+        "нет в демо-базе",
+        "нет в базе знаний",
     ]
+
     lowered = text.lower()
     return any(marker in lowered for marker in fallback_markers)
 
 
-# =========================
+# ============================================================
 # ОБРАБОТЧИКИ
-# =========================
+# ============================================================
 
 async def show_screen(
     update: Update,
     screen_id: str,
     context: ContextTypes.DEFAULT_TYPE | None = None,
 ) -> None:
+    if not update.message:
+        return
+
     text = SCREEN_TEXTS.get(screen_id, "Экран пока не найден.")
     keyboard = build_keyboard(screen_id)
 
     if context is not None:
         context.user_data["awaiting_ai_question"] = (screen_id == "ask_ai_screen")
 
-    await update.message.reply_text(text, reply_markup=keyboard)
+    await update.message.reply_text(
+        text,
+        reply_markup=keyboard,
+        disable_web_page_preview=True,
+    )
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -325,19 +457,36 @@ async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message:
+        return
+
     await update.message.reply_text(
         "Команды:\n"
         "/start — открыть главное меню\n"
         "/menu — открыть главное меню\n"
         "/help — помощь\n"
-        "/usage — показать лимит AI-ответов",
+        "/usage — показать лимит AI-ответов, доступно только владельцу при настройке OWNER_TELEGRAM_ID\n\n"
+        "Выберите раздел кнопками ниже или нажмите «Задать вопрос».",
         reply_markup=build_keyboard("start_screen"),
     )
 
 
 async def usage_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if OWNER_TELEGRAM_ID:
+        current_user_id = str(update.effective_user.id) if update.effective_user else ""
+
+        if current_user_id != OWNER_TELEGRAM_ID:
+            await update.message.reply_text(
+                "Эта команда доступна только владельцу бота.",
+                reply_markup=build_keyboard("start_screen"),
+            )
+            return
+
     usage_text = get_client_usage_text(CLIENT_ID, DEFAULT_MONTHLY_LIMIT)
-    await update.message.reply_text(usage_text)
+    await update.message.reply_text(
+        usage_text,
+        reply_markup=build_keyboard("start_screen"),
+    )
 
 
 async def handle_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -353,23 +502,25 @@ async def handle_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if ai_limit_reached(CLIENT_ID, DEFAULT_MONTHLY_LIMIT):
         context.user_data["awaiting_ai_question"] = False
         await update.message.reply_text(
-            "Лимит AI-ответов на этот период временно исчерпан.\n"
-            "Вы всё ещё можете воспользоваться кнопками бота или связаться с администратором.\n\n"
-            "Для продолжения AI-ответов можно подключить дополнительный пакет.",
+            "Лимит AI-ответов на этот период временно исчерпан.\n\n"
+            "В рабочем проекте в такой ситуации можно подключить дополнительный AI-пакет "
+            "или оставить клиенту кнопки и переход к администратору.",
             reply_markup=build_keyboard("admin_screen"),
         )
         return
 
-    await update.message.reply_text("Секунду, думаю над ответом...")
+    await update.message.reply_text("Секунду, формирую ответ...")
 
     try:
         ai_answer = ask_ai_with_retry(user_question)
     except Exception as e:
         context.user_data["awaiting_ai_question"] = False
         print("FINAL GEMINI ERROR:", repr(e))
+
         await update.message.reply_text(
-            "Сейчас AI-ответы временно перегружены.\n"
-            "Пожалуйста, попробуйте ещё раз чуть позже или свяжитесь с администратором: @your_admin_username",
+            "Сейчас AI-ответ временно недоступен.\n\n"
+            "В рабочем боте в такой ситуации клиенту можно предложить перейти к администратору "
+            "или попробовать позже.",
             reply_markup=build_keyboard("admin_screen"),
         )
         return
@@ -392,12 +543,16 @@ async def handle_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 [KeyboardButton("В меню")],
             ],
             resize_keyboard=True,
+            input_field_placeholder="Выберите действие"
         ),
     )
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    text = (update.message.text or "").strip()
+    if not update.message or not update.message.text:
+        return
+
+    text = update.message.text.strip()
 
     if context.user_data.get("awaiting_ai_question") and text not in BUTTON_TO_SCREEN:
         await handle_ai_question(update, context)
@@ -408,12 +563,36 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     await update.message.reply_text(
-        "Пожалуйста, используйте кнопки меню ниже.",
+        "Пожалуйста, используйте кнопки меню ниже или нажмите «Задать вопрос».",
         reply_markup=build_keyboard("start_screen"),
     )
 
 
+# ============================================================
+# ПРОВЕРКА НАСТРОЕК И ЗАПУСК
+# ============================================================
+
+def validate_settings() -> None:
+    missing = []
+
+    if not TOKEN:
+        missing.append("TELEGRAM_BOT_TOKEN")
+
+    if not PUBLIC_URL:
+        missing.append("PUBLIC_URL")
+
+    if not GEMINI_API_KEY:
+        missing.append("GEMINI_API_KEY")
+
+    if missing:
+        raise RuntimeError(
+            "Не заданы обязательные переменные окружения: " + ", ".join(missing)
+        )
+
+
 def main() -> None:
+    validate_settings()
+
     application = Application.builder().token(TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
@@ -422,7 +601,7 @@ def main() -> None:
     application.add_handler(CommandHandler("usage", usage_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("Minimal AI-first Beauty Bot with retry and monthly limits is running on Render...")
+    print(f"Beauty AI Demo Bot is running on Render with model: {GEMINI_MODEL}")
 
     application.run_webhook(
         listen="0.0.0.0",
