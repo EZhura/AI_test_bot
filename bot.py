@@ -1,7 +1,8 @@
 import os
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timezone
+
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
     Application,
@@ -10,6 +11,7 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
+
 from google import genai
 from knowledge import SALON_KNOWLEDGE
 
@@ -19,12 +21,14 @@ from knowledge import SALON_KNOWLEDGE
 # ============================================================
 # Обязательные переменные окружения:
 # TELEGRAM_BOT_TOKEN — токен AI-бота от BotFather
-# PUBLIC_URL — публичный URL Render-сервиса, например https://your-service.onrender.com
+# PUBLIC_URL — публичный URL Render-сервиса, например:
+# https://your-service.onrender.com
 # GEMINI_API_KEY — ключ Gemini API
 #
 # Необязательные переменные окружения:
 # GEMINI_MODEL — модель Gemini, например gemini-3.5-flash
 # OWNER_TELEGRAM_ID — ваш Telegram user_id, чтобы только вы могли смотреть /usage
+# DEFAULT_MONTHLY_LIMIT — лимит AI-ответов, по умолчанию 500
 #
 # PORT Render обычно задаёт сам.
 # ============================================================
@@ -35,12 +39,8 @@ PORT = int(os.environ.get("PORT", "10000"))
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
 
-# Если хотите закрыть /usage от всех, кроме себя:
-# 1. Узнайте свой Telegram user_id через @userinfobot
-# 2. Добавьте в Render переменную OWNER_TELEGRAM_ID=ваш_id
 OWNER_TELEGRAM_ID = os.environ.get("OWNER_TELEGRAM_ID")
 
-# Идентификатор демо-проекта для учёта лимита
 CLIENT_ID = "beauty_ai_demo_bot"
 DEFAULT_MONTHLY_LIMIT = int(os.environ.get("DEFAULT_MONTHLY_LIMIT", "500"))
 USAGE_FILE = "usage_data.json"
@@ -79,7 +79,7 @@ SYSTEM_PROMPT = """
 # ============================================================
 
 def get_current_period() -> str:
-    return datetime.utcnow().strftime("%Y-%m")
+    return datetime.now(timezone.utc).strftime("%Y-%m")
 
 
 def load_usage_data() -> dict:
@@ -174,6 +174,7 @@ def get_gemini_client():
     if gemini_client is None:
         if not GEMINI_API_KEY:
             raise RuntimeError("Не задана переменная окружения GEMINI_API_KEY")
+
         gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
     return gemini_client
@@ -215,6 +216,7 @@ def ask_ai_with_retry(user_question: str, max_attempts: int = 3) -> str:
     for attempt in range(1, max_attempts + 1):
         try:
             return ask_ai(user_question)
+
         except Exception as e:
             last_error = e
             error_text = repr(e)
@@ -490,6 +492,9 @@ async def usage_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def handle_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message:
+        return
+
     user_question = (update.message.text or "").strip()
 
     if not user_question:
@@ -513,6 +518,7 @@ async def handle_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     try:
         ai_answer = ask_ai_with_retry(user_question)
+
     except Exception as e:
         context.user_data["awaiting_ai_question"] = False
         print("FINAL GEMINI ERROR:", repr(e))
